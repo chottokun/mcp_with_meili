@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, mock_open, patch
 from pathlib import Path
-from ingester import IngesterHandler
+from ingester import IngesterHandler, main
+import os
 
 # テスト用の設定値
 TEST_INDEX_NAME = 'test_documents'
@@ -110,3 +111,62 @@ def test_on_created_event_fires_processing(mocker):
 
     # 3. 検証
     handler.process_file.assert_called_once_with(mock_event.src_path)
+
+@patch('ingester.Client')
+@patch('ingester.IngesterHandler')
+@patch('ingester.Observer')
+@patch('time.sleep')
+def test_main_function_setup(mock_sleep, MockObserver, MockIngesterHandler, MockClient, mocker):
+    """main関数が環境変数を正しく読み込み、IngesterHandlerとObserverを適切に設定するかテスト"""
+    # 1. セットアップ
+    # 環境変数をモック
+    mocker.patch.dict(os.environ, {
+        'MEILISEARCH_URL': 'http://test_meilisearch:7700',
+        'MEILISEARCH_API_KEY': 'test_key',
+        'INDEX_NAME': 'test_index',
+        'MODE': 'pdf',
+        'INPUT_DIR': '/test/input/pdf_dir',
+        'LOG_FILE_PATH': '/test/logs/pdf_ingester.log'
+    })
+
+    # Observerのインスタンスとメソッドをモック
+    mock_observer_instance = MockObserver.return_value
+    mock_observer_instance.start = MagicMock()
+    mock_observer_instance.stop = MagicMock()
+    mock_observer_instance.join = MagicMock()
+
+    # Clientのインスタンスをモック
+    mock_client_instance = MockClient.return_value
+
+    # IngesterHandlerのインスタンスをモック
+    mock_handler_instance = MockIngesterHandler.return_value
+
+    # KeyboardInterruptを発生させるためにtime.sleepをモック
+    mock_sleep.side_effect = KeyboardInterrupt
+
+    # 2. 実行
+    main()
+
+    # 3. 検証
+    # Clientが正しいURLとAPIキーで初期化されたか
+    MockClient.assert_called_once_with('http://test_meilisearch:7700', 'test_key')
+
+    # IngesterHandlerが正しい引数で初期化されたか
+    MockIngesterHandler.assert_called_once_with(
+        mock_client_instance,
+        'test_index',
+        '/test/input/pdf_dir',
+        'pdf'
+    )
+
+    # Observerがハンドラーとディレクトリでスケジュールされたか
+    mock_observer_instance.schedule.assert_called_once_with(
+        mock_handler_instance,
+        '/test/input/pdf_dir',
+        recursive=False
+    )
+
+    # Observerが開始、停止、結合されたか
+    mock_observer_instance.start.assert_called_once()
+    mock_observer_instance.stop.assert_called_once()
+    mock_observer_instance.join.assert_called_once()

@@ -1,19 +1,17 @@
-version: '3.8'
 
 services:
   meilisearch:
-    image: getmeili/meilisearch:latest
+    image: getmeili/meilisearch:prototype-japanese-13
     container_name: meilisearch-jp
     ports:
       - "7700:7700"
     volumes:
       - ./data/meili:/meili_data
+      - ./input/json:/input/json:ro
+      - ./input/pdf:/input/pdf:ro
       - ./logs:/logs
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
-    command: >
-      --experimental-enable-dashboard
-      --http-addr=0.0.0.0:7700
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
       interval: 30s

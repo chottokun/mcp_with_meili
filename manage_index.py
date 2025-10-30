@@ -36,7 +36,7 @@ def main():
         print(f"インデックス削除: {args.name}")
     elif args.cmd == 'list':
         for idx in client.get_indexes()['results']:
-            print(idx['uid'])
+            print(idx.uid)
     elif args.cmd == 'settings' and args.searchable:
         client.index(args.name).update_searchable_attributes(args.searchable)
         print(f"設定更新: {args.name} → searchable: {args.searchable}")

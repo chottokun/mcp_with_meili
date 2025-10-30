@@ -87,10 +87,7 @@ def main():
     mode = os.getenv('MODE', 'json').lower()
 
     # 環境変数から入力ディレクトリを取得
-    input_dir = os.getenv('INPUT_DIR')
-    if not input_dir:
-        logging.error("環境変数 INPUT_DIR が設定されていません。")
-        sys.exit(1)
+    input_dir = os.getenv('INPUT_DIR', '/input/json') if mode == 'json' else os.getenv('INPUT_DIR', '/input/pdf')
 
     client = Client(url, api_key)
     handler = IngesterHandler(client, index_name, input_dir, mode)
