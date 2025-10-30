@@ -229,5 +229,5 @@ __marimo__/
 # MeiliSearch data folder
 data/
 
-inputs/json/*
-inputs/pdf/*
+input/json/*.json
+input/pdf/*.pdf
