@@ -106,18 +106,20 @@ docker compose logs -f pdf-ingester
 
 **実行例:**
 ```bash
-# インデックスの一覧を表示
-python3 manage_index.py list
+# インデックスの一覧を表示 (コンテナ内で実行)
+docker compose exec json-ingester python3 manage_index.py list
 
-# 'another_index' という名前で新しいインデックスを作成
-python3 manage_index.py create another_index
+# 'another_index' という名前で新しいインデックスを作成 (コンテナ内で実行)
+docker compose exec json-ingester python3 manage_index.py create another_index
 
-# 'documents' インデックスの検索対象フィールドを 'content' と 'source' に設定
-python3 manage_index.py settings documents --searchable content source
+# 'documents' インデックスの検索対象フィールドを 'content' と 'source' に設定 (コンテナ内で実行)
+docker compose exec json-ingester python3 manage_index.py settings documents --searchable content source
 
-# 'documents' インデックスを削除
-python3 manage_index.py delete documents
+# 'documents' インデックスを削除 (コンテナ内で実行)
+docker compose exec json-ingester python3 manage_index.py delete documents
 ```
+
+**補足:** `manage_index.py`は`json-ingester`または`pdf-ingester`コンテナ内で実行してください。これらのコンテナには必要なPython環境とMeilisearchクライアントがインストールされています。
 
 ## 🧪 テストの実行
 

@@ -76,7 +76,7 @@ class IngesterHandler(FileSystemEventHandler):
 
             # Meilisearch に投入
             task = self.client.index(self.index_name).add_documents(docs)
-            logging.info(f"投入成功: {len(docs)}件 → index={self.index_name}, task={task['taskUid']}")
+            logging.info(f"投入成功: {len(docs)}件 → index={self.index_name}, task={task.task_uid}")
         except Exception as e:
             logging.error(f"処理失敗 {file_path}: {e}")
 
