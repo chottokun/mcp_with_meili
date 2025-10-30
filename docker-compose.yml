@@ -1,0 +1,59 @@
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:prototype-japanese-13
+    container_name: meilisearch-jp
+    ports:
+      - "7700:7700"
+    volumes:
+      - ./data/meili:/meili_data
+      - ./input/json:/input/json:ro
+      - ./input/pdf:/input/pdf:ro
+      - ./logs:/logs
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  json-ingester:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingester
+    container_name: json-ingester
+    volumes:
+      - ./input/json:/input/json:ro
+      - ./logs:/logs
+    environment:
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+      - INDEX_NAME=documents
+      - MODE=json
+      - INPUT_DIR=/input/json
+      - LOG_FILE_PATH=/logs/json-ingester.log
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pdf-ingester:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingester
+    container_name: pdf-ingester
+    volumes:
+      - ./input/pdf:/input/pdf:ro
+      - ./logs:/logs
+    environment:
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+      - INDEX_NAME=documents
+      - MODE=pdf
+      - INPUT_DIR=/input/pdf
+      - LOG_FILE_PATH=/logs/pdf-ingester.log
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    restart: unless-stopped

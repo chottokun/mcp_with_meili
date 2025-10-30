@@ -225,3 +225,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MeiliSearch data folder
+data/
+
+input/json/*.json
+input/pdf/*.pdf

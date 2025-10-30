@@ -1,0 +1,5 @@
+meilisearch==0.37.1
+watchdog==4.0.0
+docling>=2.0.0
+pytest==8.2.2
+pytest-mock==3.14.0
