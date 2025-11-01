@@ -123,10 +123,37 @@ docker compose exec json-ingester python3 manage_index.py delete documents
 
 ## 🧪 テストの実行
 
-`pytest`を使用したテストが用意されています。以下のコマンドで、コンテナ内で全てのテストを実行できます。
+`pytest`を使用したテストが用意されています。
+
+### Docker環境での実行
+以下のコマンドで、コンテナ内で全てのテストを実行できます。
 ```bash
 docker compose exec json-ingester bash -c "PYTHONPATH=. pytest tests/"
 ```
+
+### uv環境での実行 (Dockerが利用できない場合)
+
+Docker Hubのレート制限などでDockerイメージをプルできない場合は、`uv`を使ってローカルでテストを実行することも可能です。`uv`は高速なPythonパッケージインストーラーです。
+
+1. **uvをインストール**
+   `uv`がインストールされていない場合は、以下のコマンドでインストールします。
+   ```bash
+   pip install uv
+   ```
+
+2. **仮想環境の作成と依存関係のインストール**
+   プロジェクトのルートで以下のコマンドを実行し、依存関係をインストールします。
+   ```bash
+   uv venv
+   uv pip install -r requirements.txt
+   ```
+
+3. **テストの実行**
+   `test_ingester.py`のような単体テストは以下のコマンドで実行できます。
+   ```bash
+   PYTHONPATH=. ./.venv/bin/pytest tests/test_ingester.py
+   ```
+   **注意:** `test_manage_index.py`のようなインテグレーションテストは、Meilisearchコンテナが起動している必要があるため、この方法では失敗します。
 
 ## 🌐 外部からのアクセス
 
