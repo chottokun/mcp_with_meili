@@ -11,7 +11,7 @@ services:
       - ./input/pdf:/input/pdf:ro
       - ./logs:/logs
     environment:
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+      - MEILI_MASTER_KEY=super_secret_master_key
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
       interval: 30s
@@ -68,6 +68,7 @@ services:
       - RABBITMQ_PASS=password
       - CONSUME_QUEUE=file_events
       - PUBLISH_QUEUE=processed_docs
+      - ENABLE_HIERARCHICAL_CHUNKING=true
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -82,7 +83,7 @@ services:
       - ./logs:/logs
     environment:
       - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY}
+      - MEILISEARCH_API_KEY=super_secret_master_key
       - INDEX_NAME=documents
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=user

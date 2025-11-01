@@ -44,6 +44,18 @@ def main():
 
     channel.queue_declare(queue=CONSUME_QUEUE, durable=True)
 
+    # Ensure the Meilisearch index exists
+    try:
+        meili_client.get_index(INDEX_NAME)
+        logging.info(f"Meilisearch index '{INDEX_NAME}' already exists.")
+    except MeilisearchApiError:
+        logging.info(f"Meilisearch index '{INDEX_NAME}' not found, creating...")
+        meili_client.create_index(INDEX_NAME, {'primaryKey': 'id'})
+        logging.info(f"Meilisearch index '{INDEX_NAME}' created.")
+        # Set searchable attributes to ensure content is searchable
+        meili_client.index(INDEX_NAME).update_searchable_attributes(['content', 'source', 'metadata.chunk_index'])
+        logging.info(f"Meilisearch index '{INDEX_NAME}' searchable attributes updated.")
+
     def callback(ch, method, properties, body):
         try:
             documents = json.loads(body)
@@ -52,11 +64,16 @@ def main():
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            logging.info(f"Received {len(documents)} documents to ingest.")
+            logging.info(f"Received {len(documents)} documents to ingest. First document: {documents[0] if documents else 'N/A'}")
 
             try:
                 task = meili_client.index(INDEX_NAME).add_documents(documents)
-                logging.info(f"Successfully sent {len(documents)} documents to Meilisearch. Task UID: {task.task_uid}")
+                logging.info(f"Successfully sent {len(documents)} documents to Meilisearch. Task UID: {task.task_uid}. Documents sent: {documents}")
+                
+                # Wait for the task to complete
+                meili_client.wait_for_task(task.task_uid)
+                logging.info(f"Meilisearch task {task.task_uid} completed.")
+
             except MeilisearchApiError as e:
                 logging.error(f"Failed to ingest documents into Meilisearch: {e}")
                 # Depending on the error, you might want to requeue

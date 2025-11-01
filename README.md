@@ -1,158 +1,159 @@
-# Meilisearch MCP Server (Japanese Optimized)
+# FastMCP with Meilisearch: A Secure RAG Platform
 
-Docker Composeで手軽に起動できる、日本語検索に最適化されたMeilisearch環境です。高度なPDF解析機能を持つDoclingと連携し、JSONファイルだけでなくPDFファイルの内容もシームレスに検索対象とすることができます。
+This project provides a secure and scalable platform for Retrieval Augmented Generation (RAG) using Meilisearch as the core search engine and FastMCP as a secure gateway. It features a microservice-based architecture for robust and efficient data ingestion, including high-fidelity document processing with Docling.
 
-## ✨ 特徴
+## ✨ Features
 
-- **日本語特化**: 日本語トークナイザーを標準搭載したMeilisearchイメージ (`getmeili/meilisearch:prototype-japanese-13`) を採用。
-- **Web UI搭載**: 直感的に検索・管理ができるWeb UIを標準で有効化。
-- **高度なPDF解析**: `Docling`ライブラリを使い、PDFのレイアウト、テーブル、OCR（スキャンされた文字）を認識し、構造化されたMarkdownとして抽出・投入。
-- **リアルタイムファイル投入**: 指定ディレクトリにJSONやPDFファイルを置くだけで、自動的にMeilisearchにデータが投入されます。
-- **シンプルな管理**: Docker Composeで全てのサービスを一括管理。インデックス操作用のPythonスクリプトも同梱。
-- **テスト完備**: `pytest`によるユニットテストとインテグレーションテストを用意。
+- **Secure Query Gateway**: FastMCP acts as a secure entry point for all search queries, providing authentication, authorization, and rate limiting.
+- **Microservice Architecture**: A decoupled system using RabbitMQ for asynchronous communication between services, ensuring scalability and resilience.
+- **Advanced Document Processing**: The `doc-processor` service uses `docling` for high-fidelity analysis of PDFs, extracting structured content and metadata.
+- **Real-time Data Ingestion**: A `file-watcher` service automatically detects new files (PDF, JSON, etc.) in the input directory and triggers the ingestion pipeline.
+- **Japanese Language Optimized**: Utilizes a Meilisearch image optimized for Japanese text search.
+- **Hybrid Search Ready**: Designed to support Meilisearch's upcoming hybrid search capabilities (keyword + vector).
+- **Easy Management**: The entire environment is managed via Docker Compose.
 
-## 🏗️ アーキテクチャ
+## 🏗️ Architecture
 
+The system is divided into two main pipelines: Data Ingestion and Query Flow.
+
+```mermaid
+graph TD
+    subgraph "Data Ingestion Pipeline (Microservices)"
+        direction LR
+        A[File System Watcher] -->|File Event| B(RabbitMQ)
+        B -->|file_events queue| C[Doc Processor]
+        C -->|processed_docs queue| B
+        B -->|Document Chunks| D[Meili Ingester]
+        D -->|Index Data| E[Meilisearch]
+    end
+
+    subgraph "Query Flow (FastMCP Secured)"
+        direction LR
+        F[User/Client] -->|Search Query| G(FastMCP Server)
+        G -->|Authenticated Query| E
+        E -->|Search Results| G
+        G -->|Results| F
+    end
 ```
-.
-├── input/
-│   ├── json/        <-- .json ファイルをここに置く
-│   └── pdf/         <-- .pdf ファイルをここに置く
-│
-├── docker-compose.yml (各サービスの定義)
-├── ingester.py        (ファイル監視・投入スクリプト)
-└── manage_index.py    (インデックス管理用CLI)
-```
 
-- **meilisearch**: 検索エンジン本体とWeb UIを提供します。
-- **json-ingester**: `input/json` ディレクトリを監視し、JSONファイルをMeilisearchに投入します。
-- **pdf-ingester**: `input/pdf` ディレクトリを監視し、Doclingを使ってPDFをMarkdownに変換後、Meilisearchに投入します。
+- **File Watcher**: Monitors the `input/` directory for new files.
+- **Doc Processor**: Processes files using `docling` to extract text and structure. It then chunks the document and sends it to the next stage.
+- **Meili Ingester**: Receives processed document chunks and ingests them into the Meilisearch `documents` index.
+- **FastMCP Server**: Provides a secure REST API for querying Meilisearch. It handles authentication and can enforce authorization rules.
+- **Meilisearch**: The core search engine, optimized for Japanese.
+- **RabbitMQ**: The message broker that decouples the microservices.
 
-## 🚀 セットアップ & 起動
+## 🚀 Setup & Launch
 
-### 前提条件
+### Prerequisites
 - Docker
 - Docker Compose
 
-### 手順
+### Steps
 
-1. **リポジトリをクローン**
-   ```bash
-   git clone <repository_url>
-   cd <repository_name>
-   ```
-
-2. **環境変数ファイルを作成**
-   Meilisearchのマスターキーを設定します。`your_strong_master_key_123456` の部分は必ずユニークで安全なものに変更してください。
-   ```bash
-   echo "MEILI_MASTER_KEY=your_strong_master_key_123456" > .env
-   ```
-
-3. **必要なディレクトリを作成**
-   ```bash
-   mkdir -p input/json input/pdf logs
-   ```
-   ※ `data/meili` ディレクトリは初回起動時に自動で作成されます。
-
-4. **Dockerコンテナを起動**
-   ```bash
-   docker compose up --build -d
-   ```
-   コンテナが正常に起動したか確認します。`meilisearch-jp`が`healthy`になっていれば成功です。
-   ```bash
-   docker compose ps
-   ```
-
-## 使い方
-
-### 1. データを投入する
-
-#### サンプルJSONファイルの投入
-以下のコマンドでサンプルデータを作成し、`input/json/`ディレクトリに配置します。
-```bash
-echo '[{"id": "doc1", "content": "これは日本語のテストです。"}, {"id": "doc2", "content": "Meilisearchは素晴らしい検索エンジンです。"}]' > input/json/sample.json
-```
-
-#### PDFファイルの投入
-お手持ちのPDFファイルを`input/pdf/`ディレクトリにコピーしてください。
-
-#### 投入状況の確認
-ファイルが配置されると、各ingesterサービスが自動で検知し、`documents`インデックスにデータを投入します。
-投入状況はログでリアルタイムに確認できます。
-```bash
-# JSON投入ログの確認
-docker compose logs -f json-ingester
-
-# PDF投入ログの確認
-docker compose logs -f pdf-ingester
-```
-
-### 2. Web UIで検索する
-
-ブラウザで `http://localhost:7700` を開きます。
-
-初回アクセス時にマスターキーの入力を求められるので、`.env` ファイルで設定したキーを入力してください。
-ダッシュボードが表示されたら、検索バーに「日本語」や「Meilisearch」と入力して、データが検索できることを確認します。
-
-### 3. インデックスをコマンドラインで管理する
-
-付属の `manage_index.py` スクリプトを使って、インデックスの作成、削除、一覧表示、設定変更が可能です。
-
-**コマンド一覧:**
-- `list`: インデックスの一覧を表示
-- `create <index_name>`: 新しいインデックスを作成
-- `delete <index_name>`: インデックスを削除
-- `settings <index_name> --searchable <field1> <field2> ...`: 検索対象フィールドを設定
-
-**実行例:**
-```bash
-# インデックスの一覧を表示 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py list
-
-# 'another_index' という名前で新しいインデックスを作成 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py create another_index
-
-# 'documents' インデックスの検索対象フィールドを 'content' と 'source' に設定 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py settings documents --searchable content source
-
-# 'documents' インデックスを削除 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py delete documents
-```
-
-**補足:** `manage_index.py`は`json-ingester`または`pdf-ingester`コンテナ内で実行してください。これらのコンテナには必要なPython環境とMeilisearchクライアントがインストールされています。
-
-## 🧪 テストの実行
-
-`pytest`を使用したテストが用意されています。以下のコマンドで、コンテナ内で全てのテストを実行できます。
-```bash
-docker compose exec json-ingester bash -c "PYTHONPATH=. pytest tests/"
-```
-
-## 🌐 外部からのアクセス
-
-### ローカルネットワークからのアクセス
-`docker-compose.yml`でポート`7700`がホストマシンに公開されているため、同じネットワーク内の他のデバイスからアクセスできます。
-
-1.  ホストマシンのローカルIPアドレスを調べます。
+1.  **Clone the Repository**
     ```bash
-    # Linux / macOS
-    hostname -I | awk '{print $1}'
-    # Windows (PowerShell)
-    (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias Wi-Fi).IPAddress
+    git clone <repository_url>
+    cd <repository_name>
     ```
-2.  同じネットワーク内の他のデバイスのブラウザで `http://<ホストマシンのIPアドレス>:7700` を開きます。
 
-**注意:** ホストマシンのファイアウォールがポート `7700` への着信接続を許可している必要があります。
+2.  **Create Environment File**
+    Set the master key for Meilisearch. **Change `your_strong_master_key_123456` to a unique and secure key.**
+    ```bash
+    echo "MEILI_MASTER_KEY=your_strong_master_key_123456" > .env
+    ```
 
-### インターネット経由でのアクセス (非推奨)
-ルーターのポートフォワーディング設定を行うことで、インターネットからアクセスすることも可能ですが、セキュリティリスクが非常に高いため推奨されません。
-本番環境で外部公開する場合は、必ずNginxなどのリバースプロキシを前に置き、HTTPS化や認証、アクセス制限などの適切なセキュリティ対策を行ってください。
+3.  **Create Necessary Directories**
+    ```bash
+    mkdir -p input/json input/pdf logs data/meili data/rabbitmq
+    touch input/json/.gitkeep input/pdf/.gitkeep
+    ```
 
-## ⚙️ 設定
+4.  **Launch Docker Containers**
+    ```bash
+    docker compose up --build -d
+    ```
+    Check if all containers are running and healthy:
+    ```bash
+    docker compose ps
+    ```
 
-主要な設定は `docker-compose.yml` と `.env` ファイルで行います。
+## 使い方 (Usage)
 
-- `MEILI_MASTER_KEY`: (`.env`) Meilisearchのマスターキー。
-- `INDEX_NAME`: (`docker-compose.yml`) データが投入されるインデックス名。
-- `INPUT_DIR`: (`docker-compose.yml`) 各ingesterが監視するディレクトリ。
-- `LOG_FILE_PATH`: (`docker-compose.yml`) 各ingesterのログ出力先。
+### 1. Ingesting Data
+
+Place your JSON or PDF files into the respective directories inside `input/`.
+
+-   `input/json/`: for JSON files.
+-   `input/pdf/`: for PDF files.
+
+The `file-watcher` service will automatically detect new files and start the ingestion process. You can monitor the logs of each service to see the progress.
+
+```bash
+# View logs for all services
+docker compose logs -f
+
+# View logs for a specific service
+docker compose logs -f file-watcher
+docker compose logs -f doc-processor
+docker compose logs -f meili-ingester
+```
+
+### 2. Searching Data
+
+#### Via Meilisearch UI (Direct Access - for Admin)
+
+You can access the Meilisearch web UI at `http://localhost:7700`. You will need the `MEILI_MASTER_KEY` to log in. This is useful for direct index management and testing.
+
+#### Via FastMCP (Recommended for Clients)
+
+The secure way to query is through the FastMCP server, which runs on `http://localhost:8000`.
+
+Send a POST request to the `/search` endpoint:
+
+```bash
+curl -X POST http://localhost:8000/search \
+-H "Content-Type: application/json" \
+-d '{
+    "query": "your search query"
+}'
+```
+
+*Note: The current FastMCP implementation is a basic proxy. Authentication and other security features are being implemented as per `docs/next_plan.md`.*
+
+### 3. Managing Indices
+
+You can use the `manage_index.py` script to perform administrative tasks on your Meilisearch indices.
+
+```bash
+# List all indices
+docker compose exec meili-ingester python manage_index.py list
+
+# Create a new index
+docker compose exec meili-ingester python manage_index.py create my_new_index
+
+# Delete an index
+docker compose exec meili-ingester python manage_index.py delete documents
+```
+
+## 🧪 Testing
+
+Run the test suite using `pytest` inside one of the service containers.
+
+```bash
+docker compose exec meili-ingester bash -c "PYTHONPATH=. pytest"
+```
+
+## ⚙️ Configuration
+
+-   `.env`:
+    -   `MEILI_MASTER_KEY`: Master key for Meilisearch.
+-   `docker-compose.yml`:
+    -   Service ports, volumes, and environment variables.
+    -   RabbitMQ credentials (`RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS`).
+-   `fastmcp/main.py`:
+    -   FastMCP server logic and API endpoints.
+-   `doc_processor.py`:
+    -   Document processing and chunking logic.
+
+Refer to `docs/next_plan.md` for the future direction of this project, including advanced chunking strategies, hybrid search, and full RAG implementation.

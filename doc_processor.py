@@ -7,6 +7,49 @@ import pika
 from pika.exceptions import AMQPConnectionError
 from pathlib import Path
 from docling.document_converter import DocumentConverter
+import re
+
+# Chunking configuration (placeholder - will be moved to a proper config system)
+CHUNKING_CONFIG = {
+    "enable_hierarchical_chunking": os.getenv("ENABLE_HIERARCHICAL_CHUNKING", "true").lower() == "true",
+    "respect_headers": os.getenv("RESPECT_HEADERS", "true").lower() == "true",
+    "max_token_size": int(os.getenv("MAX_TOKEN_SIZE", "256")),
+    "overlap_tokens": int(os.getenv("OVERLAP_TOKENS", "25")),
+}
+
+def chunk_markdown_by_headers(markdown_content, max_token_size, overlap_tokens):
+    """
+    Splits markdown content into chunks based on headers.
+    This is a simplified implementation for demonstration.
+    """
+    chunks = []
+    # Split by top-level headers for simplicity
+    sections = re.split(r'(#{1,6} .*(?:\n|$))', markdown_content)
+    
+    current_chunk_content = ""
+    for i, section in enumerate(sections):
+        if section.strip():
+            if re.match(r'#{1,6} .*', section): # It's a header
+                if current_chunk_content:
+                    chunks.append(current_chunk_content.strip())
+                current_chunk_content = section
+            else: # It's content
+                current_chunk_content += section
+    
+    if current_chunk_content:
+        chunks.append(current_chunk_content.strip())
+
+    # Further split chunks if they exceed max_token_size (simplified, token counting not implemented)
+    final_chunks = []
+    for chunk in chunks:
+        if len(chunk.split()) > max_token_size: # Very naive token count
+            # Simple split for now, more sophisticated logic needed for real token counting and overlap
+            sub_chunks = [chunk[i:i+max_token_size*5] for i in range(0, len(chunk), max_token_size*5)] # Approx char count
+            final_chunks.extend(sub_chunks)
+        else:
+            final_chunks.append(chunk)
+
+    return final_chunks
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,8 +75,14 @@ def connect_to_rabbitmq():
             time.sleep(5)
 
 class DocumentProcessor:
-    def __init__(self):
-        self.converter = DocumentConverter()
+    def __init__(self, converter=None, chunking_config=None):
+        self.converter = converter if converter else DocumentConverter()
+        self.chunking_config = chunking_config if chunking_config else {
+            "enable_hierarchical_chunking": os.getenv("ENABLE_HIERARCHICAL_CHUNKING", "false").lower() == "true",
+            "respect_headers": os.getenv("RESPECT_HEADERS", "true").lower() == "true",
+            "max_token_size": int(os.getenv("MAX_TOKEN_SIZE", "256")),
+            "overlap_tokens": int(os.getenv("OVERLAP_TOKENS", "25")),
+        }
 
     def process_file(self, file_path_str):
         """Processes a file based on its extension."""
@@ -47,18 +96,40 @@ class DocumentProcessor:
             if file_path.suffix.lower() == '.pdf':
                 result = self.converter.convert(file_path_str)
                 markdown = result.document.export_to_markdown()
-                doc = {
-                    "id": file_path.stem,
-                    "content": markdown,
-                    "type": "pdf",
-                    "source": file_path.name,
-                    "metadata": {
-                        "format": "markdown",
-                        "page_count": len(result.document.pages) if hasattr(result.document, 'pages') else 0
+
+                if self.chunking_config["enable_hierarchical_chunking"] and self.chunking_config["respect_headers"]:
+                    chunks = chunk_markdown_by_headers(
+                        markdown,
+                        self.chunking_config["max_token_size"],
+                        self.chunking_config["overlap_tokens"]
+                    )
+                    for i, chunk_content in enumerate(chunks):
+                        doc = {
+                            "id": f"{file_path.stem}-{i}", # Unique ID for each chunk
+                            "content": chunk_content,
+                            "type": "pdf_chunk",
+                            "source": file_path.name,
+                            "metadata": {
+                                "format": "markdown",
+                                "page_count": len(result.document.pages) if hasattr(result.document, 'pages') else 0,
+                                "chunk_index": i
+                            }
+                        }
+                        docs.append(doc)
+                    logging.info(f"Processed PDF with hierarchical chunking: {file_path.name} into {len(chunks)} chunks.")
+                else:
+                    doc = {
+                        "id": file_path.stem,
+                        "content": markdown,
+                        "type": "pdf", # Keep type as 'pdf' when chunking is disabled
+                        "source": file_path.name,
+                        "metadata": {
+                            "format": "markdown",
+                            "page_count": len(result.document.pages) if hasattr(result.document, 'pages') else 0
+                        }
                     }
-                }
-                docs.append(doc)
-                logging.info(f"Processed PDF: {file_path.name}")
+                    docs.append(doc)
+                    logging.info(f"Processed PDF without chunking: {file_path.name}")
 
             elif file_path.suffix.lower() == '.json':
                 with open(file_path, 'r', encoding='utf-8') as f:
