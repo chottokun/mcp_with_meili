@@ -18,41 +18,93 @@ services:
       timeout: 10s
       retries: 3
 
-  json-ingester:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  file-watcher:
     build:
       context: .
-      dockerfile: Dockerfile.ingester
-    container_name: json-ingester
+      dockerfile: Dockerfile.file_watcher
+    container_name: file-watcher
     volumes:
-      - ./input/json:/input/json:ro
+      - ./input:/input:ro
+      - ./logs:/logs
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASS=password
+      - RABBITMQ_QUEUE=file_events
+      - WATCH_DIRECTORY=/input
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  doc-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.doc_processor
+    container_name: doc-processor
+    volumes:
+      - ./input:/input:ro
+      - ./logs:/logs
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASS=password
+      - CONSUME_QUEUE=file_events
+      - PUBLISH_QUEUE=processed_docs
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  meili-ingester:
+    build:
+      context: .
+      dockerfile: Dockerfile.meili_ingester
+    container_name: meili-ingester
+    volumes:
       - ./logs:/logs
     environment:
       - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY}
       - INDEX_NAME=documents
-      - MODE=json
-      - INPUT_DIR=/input/json
-      - LOG_FILE_PATH=/logs/json-ingester.log
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASS=password
+      - CONSUME_QUEUE=processed_docs
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       meilisearch:
         condition: service_healthy
     restart: unless-stopped
 
-  pdf-ingester:
+  fastmcp:
     build:
       context: .
-      dockerfile: Dockerfile.ingester
-    container_name: pdf-ingester
-    volumes:
-      - ./input/pdf:/input/pdf:ro
-      - ./logs:/logs
+      dockerfile: Dockerfile.fastmcp
+    container_name: fastmcp
+    ports:
+      - "8000:8000"
     environment:
       - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
-      - INDEX_NAME=documents
-      - MODE=pdf
-      - INPUT_DIR=/input/pdf
-      - LOG_FILE_PATH=/logs/pdf-ingester.log
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY}
     depends_on:
       meilisearch:
         condition: service_healthy
