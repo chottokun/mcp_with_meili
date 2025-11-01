@@ -1,4 +1,3 @@
-
 services:
   meilisearch:
     image: getmeili/meilisearch:prototype-japanese-13
@@ -7,8 +6,7 @@ services:
       - "7700:7700"
     volumes:
       - ./data/meili:/meili_data
-      - ./input/json:/input/json:ro
-      - ./input/pdf:/input/pdf:ro
+      - ./input:/input:ro
       - ./logs:/logs
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
@@ -18,41 +16,83 @@ services:
       timeout: 10s
       retries: 3
 
-  json-ingester:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  file-watcher:
     build:
       context: .
-      dockerfile: Dockerfile.ingester
-    container_name: json-ingester
+      dockerfile: services/watcher/Dockerfile
+    container_name: file-watcher
     volumes:
-      - ./input/json:/input/json:ro
+      - ./input:/input:ro
       - ./logs:/logs
     environment:
+      - RABBITMQ_HOST=rabbitmq
+      - WATCH_DIR=/input
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  doc-processor:
+    build:
+      context: .
+      dockerfile: services/processor/Dockerfile
+    container_name: doc-processor
+    volumes:
+      - ./input:/input:ro
+      - ./logs:/logs
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  meili-ingester:
+    build:
+      context: .
+      dockerfile: services/ingester/Dockerfile
+    container_name: meili-ingester
+    volumes:
+      - ./logs:/logs
+    environment:
+      - RABBITMQ_HOST=rabbitmq
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
       - INDEX_NAME=documents
-      - MODE=json
-      - INPUT_DIR=/input/json
-      - LOG_FILE_PATH=/logs/json-ingester.log
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       meilisearch:
         condition: service_healthy
     restart: unless-stopped
 
-  pdf-ingester:
+  fastmcp:
     build:
       context: .
-      dockerfile: Dockerfile.ingester
-    container_name: pdf-ingester
-    volumes:
-      - ./input/pdf:/input/pdf:ro
-      - ./logs:/logs
+      dockerfile: services/fastmcp/Dockerfile
+    container_name: fastmcp-gateway
+    ports:
+      - "8000:8000"
     environment:
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
-      - INDEX_NAME=documents
-      - MODE=pdf
-      - INPUT_DIR=/input/pdf
-      - LOG_FILE_PATH=/logs/pdf-ingester.log
     depends_on:
       meilisearch:
         condition: service_healthy
