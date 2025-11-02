@@ -170,3 +170,44 @@ def test_main_function_setup(mock_sleep, MockObserver, MockIngesterHandler, Mock
     mock_observer_instance.start.assert_called_once()
     mock_observer_instance.stop.assert_called_once()
     mock_observer_instance.join.assert_called_once()
+
+@patch('ingester.logging')
+def test_invalid_json_file(mock_logging, mock_meili_client):
+    """無効なJSONファイルがエラーとして記録されるかテスト"""
+    handler = IngesterHandler(mock_meili_client, TEST_INDEX_NAME, TEST_INPUT_DIR, 'json')
+    test_file_path = str(Path(TEST_INPUT_DIR) / 'invalid.json')
+    invalid_json_content = '{"id": 1, "content": "test content"'  # Unclosed brace
+
+    with patch('builtins.open', mock_open(read_data=invalid_json_content)):
+        handler.process_file(test_file_path)
+
+    mock_meili_client.index(TEST_INDEX_NAME).add_documents.assert_not_called()
+    mock_logging.error.assert_called_once()
+
+@patch('ingester.logging')
+def test_meilisearch_api_error(mock_logging, mock_meili_client):
+    """Meilisearch APIエラーが記録されるかテスト"""
+    mock_meili_client.index(TEST_INDEX_NAME).add_documents.side_effect = Exception("API Error")
+    handler = IngesterHandler(mock_meili_client, TEST_INDEX_NAME, TEST_INPUT_DIR, 'json')
+    test_file_path = str(Path(TEST_INPUT_DIR) / 'sample.json')
+    json_content = '{"id": 1, "content": "test content"}'
+
+    with patch('builtins.open', mock_open(read_data=json_content)):
+        handler.process_file(test_file_path)
+
+    mock_logging.error.assert_called_once_with(f"処理失敗 {test_file_path}: API Error")
+
+@patch('ingester.DocumentConverter')
+@patch('ingester.logging')
+def test_pdf_conversion_error(mock_logging, MockDoclingConverter, mock_meili_client):
+    """PDF変換エラーが記録されるかテスト"""
+    mock_converter = MockDoclingConverter.return_value
+    mock_converter.convert.side_effect = Exception("Conversion Failed")
+
+    handler = IngesterHandler(mock_meili_client, TEST_INDEX_NAME, TEST_INPUT_DIR, 'pdf')
+    test_file_path = str(Path(TEST_INPUT_DIR) / 'document.pdf')
+
+    handler.process_file(test_file_path)
+
+    mock_meili_client.index(TEST_INDEX_NAME).add_documents.assert_not_called()
+    mock_logging.error.assert_called_once_with(f"処理失敗 {test_file_path}: Conversion Failed")
