@@ -121,12 +121,46 @@ docker compose exec json-ingester python3 manage_index.py delete documents
 
 **補足:** `manage_index.py`は`json-ingester`または`pdf-ingester`コンテナ内で実行してください。これらのコンテナには必要なPython環境とMeilisearchクライアントがインストールされています。
 
-## 🧪 テストの実行
+## 🧪 テスト
 
-`pytest`を使用したテストが用意されています。以下のコマンドで、コンテナ内で全てのテストを実行できます。
+`pytest` を使用したユニットテストとインテグレーションテストが用意されています。
+
+### 1. 依存関係のインストール
+
+テストを実行する前に、`uv` または `pip` を使用して必要なパッケージをインストールします。
+
 ```bash
-docker compose exec json-ingester bash -c "PYTHONPATH=. pytest tests/"
+# uvを使用する場合
+uv pip install -r requirements.txt
+
+# pipを使用する場合
+pip install -r requirements.txt
 ```
+
+### 2. テストの実行
+
+#### ユニットテスト (ローカルで実行可能)
+
+`ingester.py` と `manage_index.py` のコアロジックに対するユニットテストです。これらのテストは外部サービスに依存しないため、Docker環境なしで直接実行できます。
+
+```bash
+# すべてのユニットテストを実行
+python -m pytest tests/test_ingester.py tests/test_index_manager.py
+```
+
+#### インテグレーションテスト (Docker環境が必要)
+
+`manage_index.py` スクリプト全体の動作を Meilisearch サービスと連携してテストします。このテストを実行するには、Docker Compose でサービスが起動している必要があります。
+
+```bash
+# Dockerコンテナを起動
+docker compose up -d
+
+# コンテナ内で全てのテスト（ユニットテスト + インテグレーションテスト）を実行
+docker compose exec json-ingester python -m pytest tests/
+```
+
+**注意:** スタンドアロンのシェルで `tests/test_manage_index.py` を直接実行すると、`meilisearch` ホストの名前解決ができずに失敗します。インテグレーションテストは必ず Docker コンテナ内で実行してください。
 
 ## 🌐 外部からのアクセス
 
