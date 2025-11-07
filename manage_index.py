@@ -1,8 +1,26 @@
 #!/usr/bin/env python3
 import os
-import sys
 from meilisearch import Client
 import argparse
+
+class IndexManager:
+    def __init__(self, client):
+        self.client = client
+
+    def create_index(self, index_name):
+        self.client.create_index(index_name)
+        return f"インデックス作成: {index_name}"
+
+    def delete_index(self, index_name):
+        self.client.index(index_name).delete()
+        return f"インデックス削除: {index_name}"
+
+    def list_indexes(self):
+        return [idx.uid for idx in self.client.get_indexes()['results']]
+
+    def update_settings(self, index_name, searchable_attrs):
+        self.client.index(index_name).update_searchable_attributes(searchable_attrs)
+        return f"設定更新: {index_name} → searchable: {searchable_attrs}"
 
 def main():
     parser = argparse.ArgumentParser(description='Meilisearch Index 管理')
@@ -28,18 +46,17 @@ def main():
     client = Client(os.getenv('MEILISEARCH_URL', 'http://localhost:7700'),
                     os.getenv('MEILISEARCH_API_KEY'))
 
+    manager = IndexManager(client)
+
     if args.cmd == 'create':
-        client.create_index(args.name)
-        print(f"インデックス作成: {args.name}")
+        print(manager.create_index(args.name))
     elif args.cmd == 'delete':
-        client.index(args.name).delete()
-        print(f"インデックス削除: {args.name}")
+        print(manager.delete_index(args.name))
     elif args.cmd == 'list':
-        for idx in client.get_indexes()['results']:
-            print(idx.uid)
+        for idx_name in manager.list_indexes():
+            print(idx_name)
     elif args.cmd == 'settings' and args.searchable:
-        client.index(args.name).update_searchable_attributes(args.searchable)
-        print(f"設定更新: {args.name} → searchable: {args.searchable}")
+        print(manager.update_settings(args.name, args.searchable))
     else:
         parser.print_help()
 
