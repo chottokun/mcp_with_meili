@@ -231,3 +231,5 @@ data/
 
 input/json/*.json
 input/pdf/*.pdf
+input/documents/*.pdf
+input/documents/*.json

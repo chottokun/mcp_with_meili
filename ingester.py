@@ -2,107 +2,111 @@ import os
 import json
 import time
 import logging
-import sys
 from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from meilisearch import Client
-from docling.document_converter import DocumentConverter
-
-# 環境変数からログファイルパスを取得、未設定の場合は標準出力のみ
-log_file_path = os.getenv('LOG_FILE_PATH')
-
-# ロガーの基本設定
-log_format = '%(asctime)s - %(levelname)s - %(message)s'
-log_level = logging.INFO
-handlers = [logging.StreamHandler()]
-
-# ログファイルパスが指定されていれば、ファイルハンドラも追加
-if log_file_path:
-    # ログディレクトリが存在しない場合は作成
-    log_dir = os.path.dirname(log_file_path)
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    handlers.append(logging.FileHandler(log_file_path, encoding='utf-8'))
-
-logging.basicConfig(
-    level=log_level,
-    format=log_format,
-    handlers=handlers
-)
+import meilisearch
+from unstructured.partition.pdf import partition_pdf
 
 
-class IngesterHandler(FileSystemEventHandler):
-    def __init__(self, client, index_name, input_dir, mode):
-        self.client = client
-        self.index_name = index_name
-        self.input_dir = Path(input_dir)
-        self.mode = mode  # 'json' or 'pdf'
-        self.converter = DocumentConverter() if mode == 'pdf' else None
+def setup_logging(log_file_path):
+    """ロギングを設定する"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_file_path),
+            logging.StreamHandler()
+        ]
+    )
 
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        ext = '.json' if self.mode == 'json' else '.pdf'
-        if event.src_path.lower().endswith(ext):
-            time.sleep(1)  # ファイル書き込み完了待機
-            self.process_file(event.src_path)
+def get_processed_files(processed_file_path):
+    """処理済みファイルリストを取得する"""
+    if not processed_file_path.exists():
+        return set()
+    with open(processed_file_path, 'r') as f:
+        return set(line.strip() for line in f)
 
-    def process_file(self, file_path):
-        try:
-            docs = []
-            path = Path(file_path)
-            if self.mode == 'pdf':
-                # Docling で高度抽出（Heronモデル）
-                result = self.converter.convert(file_path)
-                markdown = result.document.export_to_markdown()
-                doc = {
-                    "id": path.stem,
-                    "content": markdown,
-                    "type": "pdf",
-                    "source": path.name,
-                    "metadata": {
-                        "format": "markdown",
-                        "page_count": len(result.document.pages) if hasattr(result.document, 'pages') else 0
-                    }
-                }
-                docs.append(doc)
-                logging.info(f"PDF → Markdown: {path.name} ({len(markdown)}文字)")
-            else:
-                # JSON 投入
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    docs = data if isinstance(data, list) else [data]
+def add_to_processed_files(processed_file_path, filename):
+    """処理済みファイルリストにファイル名を追加する"""
+    with open(processed_file_path, 'a') as f:
+        f.write(filename + '\n')
 
-            # Meilisearch に投入
-            task = self.client.index(self.index_name).add_documents(docs)
-            logging.info(f"投入成功: {len(docs)}件 → index={self.index_name}, task={task.task_uid}")
-        except Exception as e:
-            logging.error(f"処理失敗 {file_path}: {e}")
+def process_json_file(file_path):
+    """JSONファイルを処理してドキュメントリストを返す"""
+    logging.info(f"Processing JSON file: {file_path.name}")
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def process_pdf_file(file_path):
+    """PDFファイルを処理してドキュメントリストを返す"""
+    logging.info(f"Processing PDF file: {file_path.name}")
+    try:
+        elements = partition_pdf(filename=str(file_path), strategy="hi_res")
+        content = "\n\n".join([str(el) for el in elements])
+        return [{
+            "id": file_path.stem,
+            "content": content,
+            "source": file_path.name
+        }]
+    except Exception as e:
+        logging.error(f"Failed to process PDF file {file_path.name}: {e}")
+        return []
 
 def main():
-    url = os.getenv('MEILISEARCH_URL', 'http://localhost:7700')
-    api_key = os.getenv('MEILISEARCH_API_KEY')
-    index_name = os.getenv('INDEX_NAME', 'documents')
-    mode = os.getenv('MODE', 'json').lower()
+    # 環境変数から設定を読み込む
+    meilisearch_url = os.getenv("MEILISEARCH_URL", "http://localhost:7700")
+    meilisearch_api_key = os.getenv("MEILISEARCH_API_KEY")
+    index_name = os.getenv("INDEX_NAME", "documents")
+    input_dir = Path(os.getenv("INPUT_DIR", "/input/documents"))
+    log_file_path = os.getenv("LOG_FILE_PATH", "/logs/document-ingester.log")
 
-    # 環境変数から入力ディレクトリを取得
-    input_dir = os.getenv('INPUT_DIR', '/input/json') if mode == 'json' else os.getenv('INPUT_DIR', '/input/pdf')
+    setup_logging(log_file_path)
 
-    client = Client(url, api_key)
-    handler = IngesterHandler(client, index_name, input_dir, mode)
+    # Meilisearchクライアントの初期化
+    client = meilisearch.Client(meilisearch_url, meilisearch_api_key)
+    index = client.index(index_name)
 
-    observer = Observer()
-    observer.schedule(handler, input_dir, recursive=False)
-    observer.start()
+    processed_file_path = input_dir / ".processed"
 
-    logging.info(f"{mode.upper()} Ingester 起動 → {input_dir} → index: {index_name}")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+    while True:
+        try:
+            logging.info("Starting ingestion cycle...")
+            processed_files = get_processed_files(processed_file_path)
+            documents_to_add = []
+            newly_processed_files = []
 
-if __name__ == '__main__':
+            for file_path in input_dir.glob('*'):
+                if file_path.name in processed_files or file_path.name.startswith('.'):
+                    continue
+
+                documents = []
+                if file_path.suffix == '.json':
+                    documents = process_json_file(file_path)
+                elif file_path.suffix == '.pdf':
+                    documents = process_pdf_file(file_path)
+                else:
+                    logging.warning(f"Skipping unsupported file type: {file_path.name}")
+                    continue
+
+                if documents:
+                    documents_to_add.extend(documents)
+                    newly_processed_files.append(file_path.name)
+
+            if documents_to_add:
+                logging.info(f"Adding {len(documents_to_add)} documents to index '{index_name}'...")
+                task = index.add_documents(documents_to_add, primary_key='id')
+                client.wait_for_task(task.task_uid)
+                logging.info("Documents added successfully.")
+
+                for filename in newly_processed_files:
+                    add_to_processed_files(processed_file_path, filename)
+            else:
+                logging.info("No new documents to ingest.")
+
+        except Exception as e:
+            logging.error(f"An error occurred during ingestion cycle: {e}")
+
+        logging.info("Ingestion cycle finished. Waiting for 60 seconds...")
+        time.sleep(60)
+
+if __name__ == "__main__":
     main()
