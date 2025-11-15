@@ -18,13 +18,13 @@ Docker Composeで手軽に起動できる、日本語検索とRAG（Retrieval-Au
 `document-ingester`サービスがファイルのテキスト抽出、チャンキング、ベクトル化を行い、Meilisearchに登録します。
 ```mermaid
 graph TD
-    A[ファイルシステム<br>/input/documents] --> B{document-ingester};
+    A["ファイルシステム<br>/input/documents"] --> B{document-ingester};
     subgraph B [ ]
-        B1[1. テキスト抽出]
-        B2[2. チャンキング]
-        B3[3. ベクトル化<br>(ruri-v3-30m)]
+        B1["1. テキスト抽出"]
+        B2["2. チャンキング"]
+        B3["3. ベクトル化<br>(ruri-v3-30m)"]
     end
-    B --> C[(Meilisearch<br>テキストとベクトルを格納)];
+    B --> C["(Meilisearch<br>テキストとベクトルを格納)"];
 ```
 
 ### 検索フロー
