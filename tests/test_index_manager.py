@@ -75,3 +75,27 @@ def test_update_japanese_settings(index_manager, mock_meili_client):
     mock_index.update_settings.assert_called_once_with(settings)
     assert "locales: ['ja-jp']" in result
     assert "embedders: default" in result
+
+def test_setup_rag_index(index_manager, mock_meili_client):
+    """setup_rag_indexが正しい設定でupdate_settingsを呼び出すことをテストする"""
+    index_name = "test_rag_index"
+
+    # update_settingsをスパイするためにモックに差し替える
+    index_manager.update_settings = MagicMock()
+
+    # これから実装する `setup_rag_index` メソッドを呼び出す
+    # このテストは、このメソッドが存在しないため AttributeError で失敗する
+    index_manager.setup_rag_index(index_name)
+
+    # 期待されるsettings
+    expected_settings = {
+        "embedding": {
+            "source": "userProvided",
+            "dimensions": 256
+        },
+        "searchableAttributes": ["content"],
+        "filterableAttributes": ["source"]
+    }
+
+    # update_settingsが期待通りの引数で呼び出されたか検証
+    index_manager.update_settings.assert_called_once_with(index_name, settings=expected_settings)

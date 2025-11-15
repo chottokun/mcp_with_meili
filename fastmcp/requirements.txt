@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+meilisearch
+sentence-transformers
+python-dotenv

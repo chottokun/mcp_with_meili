@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import os
+from dotenv import load_dotenv
 from meilisearch import Client
 import argparse
+
+load_dotenv()
 
 class IndexManager:
     def __init__(self, client):
@@ -38,6 +41,18 @@ class IndexManager:
 
         return f"設定更新: {index_name} → {', '.join(msgs)}"
 
+    def setup_rag_index(self, index_name):
+        """RAG用のインデックス設定を適用する"""
+        rag_settings = {
+            "embedding": {
+                "source": "userProvided",
+                "dimensions": 256
+            },
+            "searchableAttributes": ["content"],
+            "filterableAttributes": ["source"]
+        }
+        return self.update_settings(index_name, settings=rag_settings)
+
 def main():
     parser = argparse.ArgumentParser(description='Meilisearch Index 管理')
     sub = parser.add_subparsers(dest='cmd')
@@ -63,9 +78,13 @@ def main():
     p.add_argument('--searchable', nargs='+', help='例: title content')
     p.add_argument('--settings-json', help='設定をJSON文字列で指定. 例: \'{"localizedAttributes": [{"attributePatterns": ["*"], "locales": ["jpn"]}], "embedders": {"default": {"source": "huggingFace", "model": "cl-nagoya/ruri-v3-30m"}}}\'')
 
+    # setup_rag
+    p = sub.add_parser('setup_rag', help='RAG用のインデックス設定')
+    p.add_argument('name', help='インデックス名')
+
     args = parser.parse_args()
     client = Client(os.getenv('MEILISEARCH_URL', 'http://localhost:7700'),
-                    os.getenv('MEILISEARCH_API_KEY'))
+                    os.getenv('MEILI_MASTER_KEY'))
 
     manager = IndexManager(client)
 
@@ -83,6 +102,8 @@ def main():
         import json
         settings = json.loads(args.settings_json) if args.settings_json else None
         print(manager.update_settings(args.name, searchable_attrs=args.searchable, settings=settings))
+    elif args.cmd == 'setup_rag':
+        print(manager.setup_rag_index(args.name))
     else:
         parser.print_help()
 

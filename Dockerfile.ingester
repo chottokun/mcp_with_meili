@@ -8,11 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install CPU-only torch to reduce image size and build time
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Copy and install other requirements, excluding torch which is already installed
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN grep -v 'torch' requirements.txt > requirements_no_torch.txt
+RUN pip install --no-cache-dir -r requirements_no_torch.txt
 
 COPY ingester.py .
-COPY manage_index.py .
-COPY tests ./tests
+COPY config.py .
 
 CMD ["python", "ingester.py"]
