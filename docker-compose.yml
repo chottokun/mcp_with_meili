@@ -1,21 +1,19 @@
-
 services:
   meilisearch:
-    image: getmeili/meilisearch:prototype-japanese-13
+    image: getmeili/meilisearch:v1.10
     container_name: meilisearch-jp
     ports:
       - "7700:7700"
     volumes:
       - ./data/meili_data:/meili_data
-      - ./input/documents:/input/documents:ro
-      - ./logs:/logs
-    environment:
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   document-ingester:
     build:
@@ -23,14 +21,29 @@ services:
       dockerfile: Dockerfile.ingester
     container_name: document-ingester
     volumes:
-      - ./input/documents:/input/documents:ro
+      - ./input:/input
       - ./logs:/logs
+    env_file:
+      - .env
     environment:
       - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-your_secure_master_key_123}
-      - INDEX_NAME=documents
-      - INPUT_DIR=/input/documents
-      - LOG_FILE_PATH=/logs/document-ingester.log
+      - INPUT_DIR=/input/documents # ingesterが監視するディレクトリ
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fastmcp:
+    build:
+      context: .
+      dockerfile: fastmcp/Dockerfile
+    container_name: fastmcp-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MEILISEARCH_URL=http://meilisearch:7700
     depends_on:
       meilisearch:
         condition: service_healthy
