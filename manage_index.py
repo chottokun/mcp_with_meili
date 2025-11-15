@@ -18,9 +18,25 @@ class IndexManager:
     def list_indexes(self):
         return [idx.uid for idx in self.client.get_indexes()['results']]
 
-    def update_settings(self, index_name, searchable_attrs):
-        self.client.index(index_name).update_searchable_attributes(searchable_attrs)
-        return f"設定更新: {index_name} → searchable: {searchable_attrs}"
+    def get_settings(self, index_name):
+        return self.client.index(index_name).get_settings()
+
+    def update_settings(self, index_name, searchable_attrs=None, settings=None):
+        msgs = []
+        if searchable_attrs:
+            self.client.index(index_name).update_searchable_attributes(searchable_attrs)
+            msgs.append(f"searchable: {searchable_attrs}")
+        if settings:
+            self.client.index(index_name).update_settings(settings)
+
+            # settingsの内容をよしなに整形してメッセージに追加
+            if "locales" in settings:
+                msgs.append(f"locales: {settings['locales']}")
+            if "embedders" in settings:
+                embedder_names = list(settings['embedders'].keys())
+                msgs.append(f"embedders: {', '.join(embedder_names)}")
+
+        return f"設定更新: {index_name} → {', '.join(msgs)}"
 
 def main():
     parser = argparse.ArgumentParser(description='Meilisearch Index 管理')
@@ -37,10 +53,15 @@ def main():
     # list
     sub.add_parser('list', help='インデックス一覧')
 
+    # show_settings
+    p = sub.add_parser('show_settings', help='設定表示')
+    p.add_argument('name', help='インデックス名')
+
     # settings
-    p = sub.add_parser('settings', help='検索可能属性設定')
+    p = sub.add_parser('settings', help='インデックス設定 (Meilisearch v1.10+)')
     p.add_argument('name', help='インデックス名')
     p.add_argument('--searchable', nargs='+', help='例: title content')
+    p.add_argument('--settings-json', help='設定をJSON文字列で指定. 例: \'{"localizedAttributes": [{"attributePatterns": ["*"], "locales": ["jpn"]}], "embedders": {"default": {"source": "huggingFace", "model": "cl-nagoya/ruri-v3-30m"}}}\'')
 
     args = parser.parse_args()
     client = Client(os.getenv('MEILISEARCH_URL', 'http://localhost:7700'),
@@ -55,8 +76,13 @@ def main():
     elif args.cmd == 'list':
         for idx_name in manager.list_indexes():
             print(idx_name)
-    elif args.cmd == 'settings' and args.searchable:
-        print(manager.update_settings(args.name, args.searchable))
+    elif args.cmd == 'show_settings':
+        import json
+        print(json.dumps(manager.get_settings(args.name), indent=2))
+    elif args.cmd == 'settings':
+        import json
+        settings = json.loads(args.settings_json) if args.settings_json else None
+        print(manager.update_settings(args.name, searchable_attrs=args.searchable, settings=settings))
     else:
         parser.print_help()
 

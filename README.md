@@ -4,7 +4,7 @@ Docker Composeで手軽に起動できる、日本語検索に最適化された
 
 ## ✨ 特徴
 
-- **日本語特化**: 日本語トークナイザーを標準搭載したMeilisearchイメージ (`getmeili/meilisearch:prototype-japanese-13`) を採用。
+- **日本語・ベクトル検索対応**: 最新のMeilisearchイメージ (`getmeili/meilisearch:v1.10`以降) を使用し、日本語の形態素解析とベクトル検索（セマンティックサーチ）の両方に対応。
 - **Web UI搭載**: 直感的に検索・管理ができるWeb UIを標準で有効化。
 - **高度なPDF解析**: `Docling`ライブラリを使い、PDFのレイアウト、テーブル、OCR（スキャンされた文字）を認識し、構造化されたMarkdownとして抽出・投入。
 - **リアルタイムファイル投入**: 指定ディレクトリにJSONやPDFファイルを置くだけで、自動的にMeilisearchにデータが投入されます。
@@ -63,6 +63,18 @@ Docker Composeで手軽に起動できる、日本語検索に最適化された
    docker compose ps
    ```
 
+5. **(オプション) ベクトル検索を有効化する**
+   ベクトル検索（セマンティックサーチ）を利用するには、起動後に以下のAPIリクエストを一度だけ実行し、実験的機能を有効にする必要があります。
+   ```bash
+   curl \
+     -X PATCH 'http://localhost:7700/experimental-features' \
+     -H 'Content-Type: application/json' \
+     -H "Authorization: Bearer $(grep MEILI_MASTER_KEY .env | cut -d '=' -f2)" \
+     --data-binary '{
+       "vectorStore": true
+     }'
+   ```
+
 ## 使い方
 
 ### 1. データを投入する
@@ -102,24 +114,36 @@ docker compose logs -f pdf-ingester
 - `list`: インデックスの一覧を表示
 - `create <index_name>`: 新しいインデックスを作成
 - `delete <index_name>`: インデックスを削除
-- `settings <index_name> --searchable <field1> <field2> ...`: 検索対象フィールドを設定
+- `settings <index_name> --settings-json <json_string>`: インデックスの詳細設定（日本語化、ベクトル検索など）を行う
 
 **実行例:**
+
+`manage_index.py`はホストマシンから直接実行できます。ただし、`MEILI_MASTER_KEY`環境変数の設定が必要です。
+
 ```bash
-# インデックスの一覧を表示 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py list
+# .envファイルからAPIキーを読み込んでインデックスの一覧を表示
+export $(cat .env | xargs) && python manage_index.py list
 
-# 'another_index' という名前で新しいインデックスを作成 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py create another_index
+# 'documents'インデックスを作成
+export $(cat .env | xargs) && python manage_index.py create documents
 
-# 'documents' インデックスの検索対象フィールドを 'content' と 'source' に設定 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py settings documents --searchable content source
-
-# 'documents' インデックスを削除 (コンテナ内で実行)
-docker compose exec json-ingester python3 manage_index.py delete documents
+# 'documents'インデックスで日本語検索とベクトル検索を有効化
+# (事前にベクトル検索の有効化APIを実行しておく必要があります)
+export $(cat .env | xargs) && python manage_index.py settings documents --settings-json '{
+  "localizedAttributes": [
+    {
+      "attributePatterns": ["*"],
+      "locales": ["jpn"]
+    }
+  ],
+  "embedders": {
+    "default": {
+      "source": "huggingFace",
+      "model": "cl-nagoya/ruri-v3-30m"
+    }
+  }
+}'
 ```
-
-**補足:** `manage_index.py`は`json-ingester`または`pdf-ingester`コンテナ内で実行してください。これらのコンテナには必要なPython環境とMeilisearchクライアントがインストールされています。
 
 ## 🧪 テスト
 

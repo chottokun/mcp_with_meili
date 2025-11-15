@@ -51,8 +51,27 @@ def test_update_settings(index_manager, mock_meili_client):
     """設定更新のテスト"""
     index_name = "test_index"
     searchable_attrs = ["title", "content"]
-    result = index_manager.update_settings(index_name, searchable_attrs)
+    result = index_manager.update_settings(index_name, searchable_attrs=searchable_attrs)
 
     mock_meili_client.index.assert_called_once_with(index_name)
     mock_meili_client.index(index_name).update_searchable_attributes.assert_called_once_with(searchable_attrs)
     assert result == f"設定更新: {index_name} → searchable: {searchable_attrs}"
+
+def test_update_japanese_settings(index_manager, mock_meili_client):
+    """日本語・ベクトル検索設定のテスト"""
+    index_name = "test_index"
+    settings = {
+        "locales": ["ja-jp"],
+        "embedders": {
+            "default": {
+                "source": "huggingFace",
+                "model": "cl-nagoya/ruri-v3-30m"
+            }
+        }
+    }
+    result = index_manager.update_settings(index_name, settings=settings)
+
+    mock_index = mock_meili_client.index(index_name)
+    mock_index.update_settings.assert_called_once_with(settings)
+    assert "locales: ['ja-jp']" in result
+    assert "embedders: default" in result
